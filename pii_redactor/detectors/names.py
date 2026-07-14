@@ -65,12 +65,34 @@ def plausible_org(name: str) -> bool:
 @lru_cache(maxsize=1)
 def _load_nlp():
     """Load the spaCy pipeline once per process (it costs ~2s and ~100MB;
-    a long-lived server must not pay that per request)."""
+    a long-lived server must not pay that per request). Everything except
+    NER (and the tok2vec it depends on) is disabled."""
     import spacy
 
-    nlp = spacy.load(SPACY_MODEL, disable=["parser", "lemmatizer"])
-    nlp.max_length = 1_000_000
+    nlp = spacy.load(
+        SPACY_MODEL, disable=["parser", "lemmatizer", "tagger", "attribute_ruler"]
+    )
     return nlp
+
+
+#: Characters per spaCy chunk. NER only needs sentence-level context, and we
+#: keep just the entity strings, so chunking cannot change the result set --
+#: but it caps peak memory (a single 340k-character doc object spikes past
+#: small-container limits and gets the process OOM-killed).
+_NER_CHUNK = 40_000
+
+
+def _iter_chunks(text: str, size: int = _NER_CHUNK):
+    """Yield successive pieces of *text*, split on line breaks."""
+    start = 0
+    while start < len(text):
+        end = min(len(text), start + size)
+        if end < len(text):
+            newline = text.rfind("\n", start + 1, end)
+            if newline > start:
+                end = newline
+        yield text[start:end]
+        start = end
 
 
 @lru_cache(maxsize=None)
@@ -116,17 +138,15 @@ class NameAndCompanyDetector(Detector):
 
     def _ner_entities(self, text: str) -> tuple[set[str], set[str]]:
         nlp = _load_nlp()
-        nlp.max_length = max(nlp.max_length, len(text) + 1)
-        doc = nlp(text)
-
         persons: set[str] = set()
         orgs: set[str] = set()
-        for entity in doc.ents:
-            clean = " ".join(entity.text.split())
-            if entity.label_ == "PERSON" and plausible_person(clean):
-                persons.add(clean)
-            elif entity.label_ == "ORG" and plausible_org(clean):
-                orgs.add(clean)
+        for doc in nlp.pipe(_iter_chunks(text), batch_size=1):
+            for entity in doc.ents:
+                clean = " ".join(entity.text.split())
+                if entity.label_ == "PERSON" and plausible_person(clean):
+                    persons.add(clean)
+                elif entity.label_ == "ORG" and plausible_org(clean):
+                    orgs.add(clean)
         return persons, orgs
 
     # -- layer 2: pattern harvesting --------------------------------------
