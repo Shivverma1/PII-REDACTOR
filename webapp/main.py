@@ -16,6 +16,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from pii_redactor.engine import redact
 from pii_redactor.evaluation import residual_scan
@@ -28,6 +29,10 @@ ALLOWED_SUFFIXES = {".pdf", ".txt"}
 STATIC_DIR = Path(__file__).parent / "static"
 
 app = FastAPI(title="PII Redaction Tool", version="1.0.0")
+
+# Hashed JS/CSS bundles produced by `vite build` (webapp/frontend -> static/).
+if (STATIC_DIR / "assets").is_dir():
+    app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")
 
 
 @app.on_event("startup")
