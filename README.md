@@ -22,7 +22,7 @@ Deliverables in this folder:
 |---|---|
 | `pii_redactor/` | source code (package) |
 | `Red Herring Prospectus.redacted.txt` | the redacted output |
-| `pii_mapping.json` | audit trail: every original → fake pair |
+| `pii_mapping.json` | audit trail: every original → fake pair (generated at runtime via `--mapping`; deliberately not committed, since it contains the original PII) |
 | `tests/test_detectors.py` | unit tests (26, all passing) |
 
 ## Approach
